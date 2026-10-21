@@ -1,8 +1,8 @@
-package database
+package models
 
-import "time"
-
-type UserRole string
+import (
+	"time"
+)
 
 type User struct {
 	ID         int64    `json:"id" db:"id"`
@@ -13,3 +13,10 @@ type User struct {
 
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 }
+
+type UserRole string
+
+const (
+	ROLE_USER  UserRole = "ROLE_USER"
+	ROLE_ADMIN UserRole = "ROLE_ADMIN"
+)
