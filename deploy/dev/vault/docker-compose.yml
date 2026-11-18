@@ -1,0 +1,57 @@
+services:
+  vault:
+    image: hashicorp/vault:latest
+    container_name: vault
+    command: server
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - "127.0.0.1:8200:8200"
+    volumes:
+      - ./vault.hcl:/vault/config/vault.hcl
+      - vault-data:/vault/file
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8200/v1/sys/health?sealedcode=204&uninitcode=204"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    
+  vault-init:
+    image: hashicorp/vault:latest
+    depends_on:
+      vault:
+        condition: service_healthy
+    environment:
+      VAULT_ADDR: http://vault:8200
+    volumes:
+      - ./.vault-keys:/keys
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+
+        if ! vault status 2>/dev/null | grep -Eq 'Initialized +true'; then
+          echo "initializing vault"
+          vault operator init -key-shares=1 -key-threshold=1 > /keys/init.txt
+        fi
+
+        UNSEAL_KEY=$$(awk '/Unseal Key 1:/ {print $$NF}' /keys/init.txt)
+        ROOT_TOKEN=$$(awk '/Initial Root Token:/ {print $$NF}' /keys/init.txt)
+
+        if vault status 2>/dev/null | grep -Eq 'Sealed +true'; then
+          echo "unsealing vault"
+          vault operator unseal "$$UNSEAL_KEY" > /dev/null
+        fi
+
+        export VAULT_TOKEN="$$ROOT_TOKEN"
+        if ! vault secrets list | grep -q '^secret/'; then
+          echo "enabling kv-v2 at secret/"
+          vault secrets enable -path=secret kv-v2
+        fi
+
+        echo "vault is ready"
+    restart: "no"
+
+volumes:
+  vault-data:
